@@ -16,13 +16,13 @@
 
 package com.acmeair.web;
 
-import com.acmeair.securityutils.SecurityUtils;
 import com.acmeair.service.BookingService;
 
 import java.io.StringReader;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.annotation.security.RolesAllowed;
 import javax.inject.Inject;
 import javax.json.Json;
 import javax.json.JsonObject;
@@ -30,16 +30,18 @@ import javax.json.JsonReader;
 import javax.json.JsonReaderFactory;
 
 import javax.ws.rs.Consumes;
-import javax.ws.rs.CookieParam;
 import javax.ws.rs.FormParam;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.metrics.annotation.Timed;
 
 @Path("/")
@@ -47,9 +49,9 @@ public class BookingServiceRest {
 
   @Inject
   BookingService bs;
-
+  
   @Inject
-  private SecurityUtils secUtils;
+  private JsonWebToken jwt;
 
   @Inject
   private RewardTracker rewardTracker;
@@ -61,6 +63,7 @@ public class BookingServiceRest {
    * Book flights.
    */
   @POST
+  @RolesAllowed({ "admin", "user" })
   @Consumes({ "application/x-www-form-urlencoded" })
   @Path("/bookflights")
   @Produces("text/plain")
@@ -70,18 +73,19 @@ public class BookingServiceRest {
       @FormParam("toFlightSegId") String toFlightSegId,
       @FormParam("retFlightId") String retFlightId, 
       @FormParam("retFlightSegId") String retFlightSegId,
-      @FormParam("oneWayFlight") boolean oneWay, 
-      @CookieParam("jwt_token") String jwtToken) {
+      @FormParam("oneWayFlight") boolean oneWay,
+      @Context HttpHeaders httpHeaders) {
     try {
       // make sure the user isn't trying to bookflights for someone else
-      if (secUtils.secureUserCalls() && !secUtils.validateJwt(userid, jwtToken)) {
+      if (!jwt.getGroups().contains("admin") && !userid.equals(jwt.getSubject())) {
         return Response.status(Response.Status.FORBIDDEN).build();
       }
 
       String bookingIdTo = bs.bookFlight(userid, toFlightSegId, toFlightId);
       
       if (rewardTracker.trackRewardMiles()) {
-        rewardTracker.updateRewardMiles(userid, toFlightSegId, true);
+        String jwtToken = httpHeaders.getRequestHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        rewardTracker.updateRewardMiles(jwtToken, userid, toFlightSegId, true);
       }
       
       String bookingInfo = "";
@@ -91,7 +95,8 @@ public class BookingServiceRest {
         bookingIdReturn = bs.bookFlight(userid, retFlightSegId, retFlightId);
         
         if (rewardTracker.trackRewardMiles()) {
-          rewardTracker.updateRewardMiles(userid, retFlightSegId, true);
+          String jwtToken = httpHeaders.getRequestHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+          rewardTracker.updateRewardMiles(jwtToken, userid, retFlightSegId, true);
         }
         
         bookingInfo = "{\"oneWay\":false,\"returnBookingId\":\"" 
@@ -111,16 +116,16 @@ public class BookingServiceRest {
    * Get Booking by Number.
    */
   @GET
+  @RolesAllowed({ "admin", "user" })
   @Path("/bybookingnumber/{userid}/{number}")
   @Produces("text/plain")
   @Timed(name = "com.acmeair.web.BookingServiceRest.getBookingByNumber",
       tags = "app=bookingservice-java") 
   public Response getBookingByNumber(@PathParam("number") String number, 
-      @PathParam("userid") String userid,
-      @CookieParam("jwt_token") String jwtToken) {
+      @PathParam("userid") String userid) {
     try {
       // make sure the user isn't trying to bookflights for someone else
-      if (secUtils.secureUserCalls() && !secUtils.validateJwt(userid, jwtToken)) {
+      if (!jwt.getGroups().contains("admin") && !userid.equals(jwt.getSubject())) {
         return Response.status(Response.Status.FORBIDDEN).build();
       }
       return Response.ok(bs.getBooking(userid, number)).build();
@@ -138,15 +143,14 @@ public class BookingServiceRest {
   @Produces("text/plain")
   @Timed(name = "com.acmeair.web.bookFlights.BookingServiceRest.getBookingsByUser",
       tags = "app=bookingervice-java")
-  public Response getBookingsByUser(@PathParam("user") String user, 
-      @CookieParam("jwt_token") String jwtToken) {
+  public Response getBookingsByUser(@PathParam("user") String userid) {
 
     try {
       // make sure the user isn't trying to bookflights for someone else
-      if (secUtils.secureUserCalls() && !secUtils.validateJwt(user, jwtToken)) {
+      if (!jwt.getGroups().contains("admin") && !userid.equals(jwt.getSubject())) {
         return Response.status(Response.Status.FORBIDDEN).build();
       }
-      return Response.ok(bs.getBookingsByUser(user).toString()).build();
+      return Response.ok(bs.getBookingsByUser(userid).toString()).build();
     } catch (Exception e) {
       e.printStackTrace();
       return null;
@@ -163,11 +167,10 @@ public class BookingServiceRest {
   @Timed(name = "com.acmeair.web.bookFlights.BookingServiceRest.cancelBookingsByNumber",
       tags = "app=bookingervice-java")
   public Response cancelBookingsByNumber(@FormParam("number") String number, 
-      @FormParam("userid") String userid,
-      @CookieParam("jwt_token") String jwtToken) {
+      @FormParam("userid") String userid,  @Context HttpHeaders httpHeaders) {
     try {
       // make sure the user isn't trying to bookflights for someone else
-      if (secUtils.secureUserCalls() && !secUtils.validateJwt(userid, jwtToken)) {
+      if (!jwt.getGroups().contains("admin") && !userid.equals(jwt.getSubject())) {
         return Response.status(Response.Status.FORBIDDEN).build();
       }
      
@@ -179,7 +182,10 @@ public class BookingServiceRest {
           jsonReader.close();
 
           bs.cancelBooking(userid, number);
-          rewardTracker.updateRewardMiles(userid, booking.getString("flightSegmentId"), false);
+          
+          String jwtToken = httpHeaders.getRequestHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+          
+          rewardTracker.updateRewardMiles(jwtToken, userid, booking.getString("flightSegmentId"), false);
         } catch (RuntimeException re) {
           // booking does not exist
           if (logger.isLoggable(Level.FINE)) {

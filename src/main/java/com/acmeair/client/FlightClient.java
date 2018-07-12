@@ -33,15 +33,6 @@ public interface FlightClient {
   @Path("/getrewardmiles")
   @Consumes({"application/x-www-form-urlencoded"})
   @Produces("application/json")
-  public MilesResponse getRewardMiles(@FormParam("flightSegment") String segmentId);
+  public MilesResponse getRewardMiles(@HeaderParam("Authorization") String jwtToken, @FormParam("flightSegment") String segmentId);
   
-  @POST
-  @Path("/getrewardmiles")
-  @Consumes({"application/x-www-form-urlencoded"})
-  @Produces("application/json")
-  public MilesResponse getRewardMiles(@FormParam("flightSegment") String segmentId,
-      @HeaderParam("acmeair-id") String headerId,
-      @HeaderParam("acmeair-date") String headerDate, 
-      @HeaderParam("acmeair-sig-body") String headerSigBody,
-      @HeaderParam("acmeair-signature") String headerSig);
 }

@@ -58,7 +58,7 @@ public class RewardTracker {
   //Make this asynchrnous so the client gets the booking confirmed message faster.
   //This can be done in the background
   @Asynchronous
-  public Future<Long> updateRewardMiles(String userid, String flightSegId, boolean add) {
+  public Future<Long> updateRewardMiles(String jwtToken, String userid, String flightSegId, boolean add) {
     
     if (trackRewardMiles) {
       
@@ -66,7 +66,7 @@ public class RewardTracker {
       Long callFailed = new Long (-1);
       
       try {
-        miles = flightClientConnection.connect(userid, flightSegId, add);
+        miles = flightClientConnection.connect(jwtToken,userid, flightSegId, add);
       } catch (Exception e) {
         e.printStackTrace();
         return CompletableFuture.completedFuture(null);
@@ -75,7 +75,7 @@ public class RewardTracker {
       Long totalMiles = null;
       if (miles != null && !miles.equals(callFailed)) {
         try {
-          totalMiles = customerClientConection.connect(userid, miles);
+          totalMiles = customerClientConection.connect(jwtToken, userid, miles);
         } catch (Exception e) {
           e.printStackTrace();
           return CompletableFuture.completedFuture(null);

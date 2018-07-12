@@ -16,18 +16,14 @@
 
 package com.acmeair.faultTolerance;
 
-import java.io.UnsupportedEncodingException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
+
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 
-import org.eclipse.microprofile.faulttolerance.Bulkhead;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -37,7 +33,6 @@ import org.eclipse.microprofile.faulttolerance.exceptions.TimeoutException;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import com.acmeair.client.CustomerClient;
-import com.acmeair.securityutils.SecurityUtils;
 
 @ApplicationScoped
 public class CustomerClientConnection {
@@ -46,20 +41,14 @@ public class CustomerClientConnection {
   
   @Inject
   @RestClient
-  private CustomerClient customerClient;
-  
-  @Inject
-  private SecurityUtils secUtils;
-  
-  private static final String UPDATE_REWARD_PATH = "/updateCustomerTotalMiles";
-  
+  private CustomerClient customerClient;     
+    
   // TODO: Do we really need all of these?
-  //@Bulkhead(value = 50, waitingTaskQueue = 300)
   @Retry(maxRetries=6,delayUnit=ChronoUnit.SECONDS,delay=10,durationUnit=ChronoUnit.MINUTES,maxDuration=5)
   @Fallback(LongFallbackHandler.class)
   @CircuitBreaker(delay=10,delayUnit = ChronoUnit.SECONDS, requestVolumeThreshold = 3, failureRatio = 1.0)
   @Timeout(value = 30, unit = ChronoUnit.SECONDS)
-  public Long connect(String userId, Long miles) throws ConnectException, TimeoutException,CircuitBreakerOpenException,InterruptedException{
+  public Long connect(String jwtToken, String userId, Long miles) throws ConnectException, TimeoutException,CircuitBreakerOpenException,InterruptedException{
     int executionCounter = 0;
     
     if (logger.isLoggable(Level.FINE)) {
@@ -74,25 +63,10 @@ public class CustomerClientConnection {
       }
       
       executionCounter++;
+       
+      return customerClient.updateCustomerTotalMiles(jwtToken, userId, miles).getMiles();
       
-      Long totalMiles;
-      
-      if (secUtils.secureServiceCalls()) {
-        Date date = new Date();
-        
-        String body = "miles=" + miles;
-        
-        String sigBody = secUtils.buildHash(body);
-        String signature = secUtils.buildHmac("POST",UPDATE_REWARD_PATH,userId,date.toString(),sigBody); 
-        
-        totalMiles =  customerClient.updateCustomerTotalMiles(userId, miles,userId, date.toString(), sigBody, signature).getMiles();
-      } else {
-        
-        totalMiles = customerClient.updateCustomerTotalMiles(userId, miles).getMiles();
-      }
-      return totalMiles;
-      
-    } catch (UnsupportedEncodingException | InvalidKeyException | NoSuchAlgorithmException e) {
+    } catch (Exception e) {
       e.printStackTrace();
       executionCounter = 0;
       return null;

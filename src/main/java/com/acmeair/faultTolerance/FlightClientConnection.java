@@ -16,18 +16,13 @@
 
 package com.acmeair.faultTolerance;
 
-import java.io.UnsupportedEncodingException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 
-import org.eclipse.microprofile.faulttolerance.Bulkhead;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Fallback;
 import org.eclipse.microprofile.faulttolerance.Retry;
@@ -36,27 +31,22 @@ import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenExce
 import org.eclipse.microprofile.faulttolerance.exceptions.TimeoutException;
 
 import com.acmeair.client.FlightClient;
-import com.acmeair.securityutils.SecurityUtils;
 
 @ApplicationScoped
 public class FlightClientConnection {
-  private static  Logger logger =  Logger.getLogger(FlightClientConnection.class.getName());
   
-  private static final String GET_REWARD_PATH = "/getrewardmiles";
+  private static  Logger logger =  Logger.getLogger(FlightClientConnection.class.getName());
   
   @Inject
   private FlightClient flightClient;
   
-  @Inject
-  private SecurityUtils secUtils;
-      
   // TODO: Do we really need all of these?
   //@Bulkhead(value = 50, waitingTaskQueue = 300)
   @Retry(maxRetries=6,delayUnit=ChronoUnit.SECONDS,delay=10,durationUnit=ChronoUnit.MINUTES,maxDuration=5)
   @Fallback(LongFallbackHandler.class)
   @CircuitBreaker(delay=10,delayUnit = ChronoUnit.SECONDS, requestVolumeThreshold = 3, failureRatio = 1.0)
   @Timeout(value = 30, unit = ChronoUnit.SECONDS)
-  public Long connect(String userId, String flightSegId, boolean add) throws ConnectException, TimeoutException,CircuitBreakerOpenException,InterruptedException{
+  public Long connect(String jwtToken, String userId, String flightSegId, boolean add) throws ConnectException, TimeoutException,CircuitBreakerOpenException,InterruptedException{
     int executionCounter = 0;
     
     if (logger.isLoggable(Level.FINE)) {
@@ -70,29 +60,15 @@ public class FlightClientConnection {
       }
       executionCounter++;
       
-      Long miles;
-      
-      if (secUtils.secureServiceCalls()) {
-        Date date = new Date();
-        
-        String body = "flightSegment=" + flightSegId;
+      Long miles = flightClient.getRewardMiles(jwtToken, flightSegId).getMiles();
             
-        String sigBody = secUtils.buildHash(body);
-        String signature = secUtils.buildHmac("POST",GET_REWARD_PATH,userId,date.toString(),sigBody); 
-
-        miles =  flightClient.getRewardMiles(flightSegId,userId, date.toString(), sigBody, signature).getMiles();
-      } else {
-      
-        miles = flightClient.getRewardMiles(flightSegId).getMiles();
-      }
-      
       if (!add ) {
         miles = miles * -1;
       }
       
       return miles;
       
-    } catch (UnsupportedEncodingException | InvalidKeyException | NoSuchAlgorithmException e) {
+    } catch (Exception e) {
       e.printStackTrace();
       executionCounter = 0;
       return null;

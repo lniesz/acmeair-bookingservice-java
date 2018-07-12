@@ -34,19 +34,6 @@ public interface CustomerClient {
   @Path("/updateCustomerTotalMiles/{custid}")
   @Consumes({ "application/x-www-form-urlencoded" })
   @Produces("application/json")
-  public MilesResponse updateCustomerTotalMiles(@PathParam("custid") String customerid, 
-      @FormParam("miles") Long miles);
-  
-  
-  @POST
-  @Path("/updateCustomerTotalMiles/{custid}")
-  @Consumes({ "application/x-www-form-urlencoded" })
-  @Produces("application/json")
-  public MilesResponse updateCustomerTotalMiles(@PathParam("custid") String customerid, 
-      @FormParam("miles") Long miles,
-      @HeaderParam("acmeair-id") String headerId,
-      @HeaderParam("acmeair-date") String headerDate, 
-      @HeaderParam("acmeair-sig-body") String headerSigBody,
-      @HeaderParam("acmeair-signature") String headerSig);
-  
+  public MilesResponse updateCustomerTotalMiles(@HeaderParam("Authorization") String jwtToken, @PathParam("custid") String customerid, 
+      @FormParam("miles") Long miles); 
 }
